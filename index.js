@@ -1,6 +1,5 @@
 const http = require("http");
 const WebSocket = require("ws");
-const fs = require("fs");
 
 // Create an HTTP server to attach the WebSocket server with CORS policy
 const server = http.createServer((req, res) => {
@@ -20,44 +19,42 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "GET") {
+  if (req.method === "GET" && req.url === "/stream") {
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("WebSocket server is running.");
+    res.end("WebSocket video stream server is active.");
     return;
   }
 
-  // Handle non-WebSocket HTTP requests if needed
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("WebSocket server is running.");
+  res.writeHead(404);
+  res.end("Not Found");
 });
 
 // Create a WebSocket server attached to the HTTP server
 const wss = new WebSocket.Server({ server });
 
-// Log when a client connects
-wss.on("connection", (socket) => {
-  console.log("Client connected");
+wss.on("connection", (socket, req) => {
+  console.log("WebSocket Client Connected for video streaming");
 
   // Send a welcome message to the client
-  socket.send("Welcome to the WebSocket server!");
+  socket.send("Welcome to the WebSocket video stream!");
 
-  // Listen for messages from the client (both text and binary)
+  // Listen for messages from the client
   socket.on("message", (message) => {
     if (message instanceof Buffer) {
-      // Handle binary image data
-      const filename = `image-${Date.now()}.png`;
-      console.log(`Received image data: ${filename}`);
-      fs.writeFileSync(filename, message);
+      // Broadcast the binary frame data to all connected clients except the sender
+      wss.clients.forEach((client) => {
+        if (client !== socket && client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
     } else {
-      // Handle text data
-      console.log(`Received: ${message}`);
-      socket.send(`Server received: ${message}`);
+      console.log(`Received non-binary message: ${message}`);
     }
   });
 
-  // Log when the client disconnects
+  // Log WebSocket disconnection
   socket.on("close", () => {
-    console.log("Client disconnected");
+    console.log("WebSocket Client Disconnected");
   });
 });
 

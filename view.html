@@ -1,51 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ESP32-CAM Stream Viewer</title>
-    <style>
-      img {
-        width: 100%; /* Adjust width as needed */
-        height: auto;
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Stream</title>
+</head>
+<body>
+  <h1>Live Video Stream</h1>
+  <img id="stream" alt="Video Stream will appear here" style="width: 100%; max-width: 640px; height: auto; border: 1px solid #ddd;">
+  
+  <script>
+    const imgElement = document.getElementById('stream');
+    const ws = new WebSocket('ws://localhost:8080');
+
+    ws.onopen = () => {
+      console.log('Connected to WebSocket server for video streaming');
+    };
+
+    ws.onmessage = (event) => {
+      if (event.data instanceof Blob) {
+        const url = URL.createObjectURL(event.data);
+        imgElement.src = url;
+        imgElement.onload = () => URL.revokeObjectURL(url); // Free memory
       }
-    </style>
-  </head>
-  <body>
-    <h1>ESP32-CAM Live Stream</h1>
-    <img id="videoStream" alt="ESP32-CAM Stream" />
+    };
 
-    <script>
-      const videoElement = document.getElementById("videoStream");
-      const ws = new WebSocket("ws://localhost:8080");
-
-      ws.binaryType = "arraybuffer";
-
-      ws.onopen = () => {
-        console.log("Connected to the WebSocket server");
-      };
-
-      ws.onmessage = (event) => {
-        const blob = new Blob([event.data], { type: "image/jpeg" });
-        const url = URL.createObjectURL(blob);
-
-        // Update the `src` attribute to show the new frame
-        videoElement.src = url;
-
-        // Revoke the object URL after the image loads to free up memory
-        videoElement.onload = () => {
-          URL.revokeObjectURL(url);
-        };
-      };
-
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-      };
-
-      ws.onclose = () => {
-        console.log("WebSocket connection closed");
-      };
-    </script>
-  </body>
+    ws.onclose = () => {
+      console.log('Disconnected from WebSocket server');
+    };
+  </script>
+</body>
 </html>
