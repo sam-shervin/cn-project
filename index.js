@@ -1,50 +1,67 @@
-// Import required modules
-const http = require('http');
-const WebSocket = require('ws');
-const fs = require('fs');
+const http = require("http");
+const WebSocket = require("ws");
+const fs = require("fs");
 
-// Create an HTTP server
+// Create an HTTP server to attach the WebSocket server with CORS policy
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('WebSocket server is running.');
+  console.log(`HTTP request received: ${req.method} ${req.url}`);
+
+  // Set CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("WebSocket server is running.");
+    return;
+  }
+
+  // Handle non-WebSocket HTTP requests if needed
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("WebSocket server is running.");
 });
 
-// Initialize the WebSocket server instance
+// Create a WebSocket server attached to the HTTP server
 const wss = new WebSocket.Server({ server });
 
-// Handle WebSocket connections
-wss.on('connection', (ws) => {
-  console.log('ESP32-CAM connected.');
+// Log when a client connects
+wss.on("connection", (socket) => {
+  console.log("Client connected");
 
-  // Handle messages from ESP32-CAM
-  ws.on('message', (data) => {
-    console.log('Received data of size:', data.length);
-    
-    // Optionally save the data to a file (e.g., for testing purposes)
-    // fs.appendFile('video_stream.bin', data, (err) => {
-    //   if (err) {
-    //     console.error('Error writing data to file:', err);
-    //   }
-    // });
+  // Send a welcome message to the client
+  socket.send("Welcome to the WebSocket server!");
 
-    // Forward data to any connected clients if needed
-    wss.clients.forEach((client) => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
-        client.send(data);
-      }
-    });
+  // Listen for messages from the client (both text and binary)
+  socket.on("message", (message) => {
+    if (message instanceof Buffer) {
+      // Handle binary image data
+      const filename = `image-${Date.now()}.png`;
+      console.log(`Received image data: ${filename}`);
+      fs.writeFileSync(filename, message);
+    } else {
+      // Handle text data
+      console.log(`Received: ${message}`);
+      socket.send(`Server received: ${message}`);
+    }
   });
 
-  ws.on('close', () => {
-    console.log('ESP32-CAM disconnected.');
-  });
-
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
+  // Log when the client disconnects
+  socket.on("close", () => {
+    console.log("Client disconnected");
   });
 });
 
-// Start the HTTP server and WebSocket server on port 8080
+// Start the HTTP server on port 8080
 server.listen(8080, () => {
-  console.log('WebSocket server is listening on ws://<domain1.com>:8080');
+  console.log("WebSocket server is running on ws://localhost:8080");
 });
