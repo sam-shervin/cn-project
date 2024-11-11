@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hand Pilot</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f0f0f0;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        position: relative;
+      }
+
+      .container {
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+
+      h1 {
+        font-size: 24px;
+        color: #333;
+        margin-bottom: 20px;
+      }
+
+      .status {
+        font-size: 16px;
+        color: #666;
+        margin-bottom: 20px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px;
+        border: none;
+        border-radius: 5px;
+        background-color: #007bff;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        margin-bottom: 10px;
+      }
+
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+
+      .notification {
+        margin-top: 10px;
+        font-size: 14px;
+        color: green;
+      }
+
+      .error {
+        color: red;
+      }
+
+      /* Countdown overlay */
+      .countdown-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 80px;
+        color: white;
+        z-index: 999;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Hand Pilot</h1>
+      <h2>Video Stream</h2>
+      <div class="status">Status: <span id="status">Disconnected</span></div>
+      <button id="startBtn" disabled>Start Recording</button>
+      <button id="stopBtn" disabled>Stop Recording</button>
+      <div id="notification" class="notification"></div>
+      <img alt="" width="800px" />
+    </div>
+
+    <!-- Countdown overlay -->
+    <div id="countdownOverlay" class="countdown-overlay"></div>
+
+    <script>
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const statusElement = document.getElementById("status");
+      const notificationElement = document.getElementById("notification");
+      const imgElement = document.querySelector("img");
+      const countdownOverlay = document.getElementById("countdownOverlay");
+
+      let socket;
+      let isRecording = false;
+
+      // Connect to WebSocket
+      function connectWebSocket() {
+        socket = new WebSocket("wss://myapp.shervin.live:443");
+
+        socket.onopen = () => {
+          statusElement.textContent = "Connected";
+          statusElement.style.color = "green";
+          startBtn.disabled = false; // Enable start button once connected
+        };
+
+        socket.onmessage = (event) => {
+          if (event.data instanceof Blob) {
+            const blob = event.data;
+            const image = new Image();
+            imgElement.src = URL.createObjectURL(blob);
+          }
+        };
+
+        socket.onclose = () => {
+          statusElement.textContent = "Disconnected";
+          statusElement.style.color = "red";
+          startBtn.disabled = true;
+          stopBtn.disabled = true;
+        };
+
+        socket.onerror = (error) => {
+          console.error("WebSocket Error: ", error);
+          notificationElement.textContent = "WebSocket connection failed!";
+          notificationElement.classList.add("error");
+        };
+      }
+
+      // Countdown function
+      function startCountdown(duration) {
+        countdownOverlay.style.display = "flex";
+        let timeLeft = duration;
+
+        const countdownInterval = setInterval(() => {
+          countdownOverlay.textContent = timeLeft;
+          timeLeft--;
+
+          if (timeLeft < 0) {
+            clearInterval(countdownInterval);
+            countdownOverlay.style.display = "none";
+          }
+        }, 1000);
+      }
+
+      // Start recording
+      startBtn.addEventListener("click", () => {
+        fetch("https://myapp.shervin.live/start")
+          .then((response) => response.text())
+          .then((data) => {
+            isRecording = true;
+            notificationElement.textContent = "Recording will start soon!";
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+
+            // Start countdown (5 seconds)
+            startCountdown(5);
+          })
+          .catch((error) => {
+            console.error("Error starting recording:", error);
+            notificationElement.textContent = "Error starting recording!";
+            notificationElement.classList.add("error");
+          });
+      });
+
+      // Stop recording
+      stopBtn.addEventListener("click", () => {
+        fetch("https://myapp.shervin.live/stop")
+          .then((response) => response.text())
+          .then((data) => {
+            isRecording = false;
+            notificationElement.textContent = "Recording stopped!";
+            stopBtn.disabled = true;
+            startBtn.disabled = false;
+          })
+          .catch((error) => {
+            console.error("Error stopping recording:", error);
+            notificationElement.textContent = "Error stopping recording!";
+            notificationElement.classList.add("error");
+          });
+      });
+
+      // Initialize WebSocket connection on page load
+      window.onload = connectWebSocket;
+    </script>
+  </body>
+</html>

@@ -1,11 +1,23 @@
-const http = require("http");
 const WebSocket = require("ws");
+const { spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const http = require("http");
 
-// Create an HTTP server to attach the WebSocket server with CORS policy
+const outputDir = path.join(__dirname, "videos");
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir);
+}
+let outputFile;
+
+let recording = false;
+let ffmpegProcess;
+let activeClients = 0;
+let frameBuffer = []; // Buffer to hold frames during the delay period
+let frameCount = 0; // Count of frames received during the 5-second delay
+
+// Create a single HTTP server
 const server = http.createServer((req, res) => {
-  console.log(`HTTP request received: ${req.method} ${req.url}`);
-
-  // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
     "Access-Control-Allow-Methods",
@@ -18,47 +30,133 @@ const server = http.createServer((req, res) => {
     res.end();
     return;
   }
+  if (req.method === "GET") {
+    if (req.url === "/start") {
+      console.log("Starting recording");
+      const date = new Date();
+      const timestamp = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}-${date.getMinutes()}-${date.getSeconds()}`;
+      outputFile = path.join(outputDir, `output-${timestamp}.mp4`);
 
-  if (req.method === "GET" && req.url === "/stream") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("WebSocket video stream server is active.");
-    return;
+      startRecordingWithDelay(); // Start the delayed recording process
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Recording will start in 5 seconds\n");
+    } else if (req.url === "/stop") {
+      console.log("Stopping recording");
+      stopRecording();
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Recording stopped\n");
+    } else {
+      console.log("Not Found");
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found\n");
+    }
+  } else {
+    console.log("Method Not Allowed");
+    res.writeHead(405, { "Content-Type": "text/plain" });
+    res.end("Method Not Allowed\n");
   }
-
-  res.writeHead(404);
-  res.end("Not Found");
 });
 
-// Create a WebSocket server attached to the HTTP server
+// Attach WebSocket server to the same HTTP server
 const wss = new WebSocket.Server({ server });
 
-wss.on("connection", (socket, req) => {
-  console.log("WebSocket Client Connected for video streaming");
+wss.on("connection", (socket) => {
+  console.log("Client connected");
+  activeClients++;
 
-  // Send a welcome message to the client
-  socket.send("Welcome to the WebSocket video stream!");
-
-  // Listen for messages from the client
   socket.on("message", (message) => {
     if (message instanceof Buffer) {
-      // Broadcast the binary frame data to all connected clients except the sender
+      // Broadcast the frame to all connected clients
       wss.clients.forEach((client) => {
         if (client !== socket && client.readyState === WebSocket.OPEN) {
           client.send(message);
         }
       });
-    } else {
-      console.log(`Received non-binary message: ${message}`);
+
+      // Write frame to ffmpeg if recording
+      if (recording && ffmpegProcess) {
+        console.log(`Received frame of size: ${message.length}`);
+        ffmpegProcess.stdin.write(message);
+      } else {
+        // Buffer frames during the delay period
+        frameBuffer.push(message);
+        frameCount++;
+      }
     }
   });
 
-  // Log WebSocket disconnection
   socket.on("close", () => {
-    console.log("WebSocket Client Disconnected");
+    console.log("Client disconnected");
+    activeClients--;
+
+    if (activeClients === 0 && recording) {
+      stopRecording(); // Stop recording if no clients are left
+    }
   });
 });
 
-// Start the HTTP server on port 8080
+// Start recording after a 5-second delay and calculate FPS
+function startRecordingWithDelay() {
+  if (recording) return;
+  recording = true;
+
+  frameBuffer = [];
+  frameCount = 0;
+
+  console.log("Buffering frames for 5 seconds to calculate FPS...");
+  setTimeout(() => {
+    const fps = frameCount / 5; // Calculate FPS
+    console.log(`Calculated FPS: ${fps}`);
+
+    startRecording(fps); // Start recording with the calculated FPS
+
+    // Write buffered frames to ffmpeg
+    frameBuffer.forEach((frame) => {
+      ffmpegProcess.stdin.write(frame);
+    });
+
+    // Clear the buffer
+    frameBuffer = [];
+  }, 5000); // Delay of 5 seconds
+}
+
+// Start the recording process with the calculated FPS
+function startRecording(fps) {
+  ffmpegProcess = spawn("ffmpeg", [
+    "-f",
+    "image2pipe", // Read frames from stdin
+    "-framerate",
+    fps.toString(), // Use calculated FPS
+    "-i",
+    "-", // Input from stdin
+    "-c:v",
+    "libx264", // Encode video as H.264
+    "-pix_fmt",
+    "yuv420p",
+    outputFile, // Output file
+  ]);
+
+  ffmpegProcess.stderr.on("data", (data) => {
+    console.log(`FFmpeg stderr: ${data}`);
+  });
+
+  ffmpegProcess.on("exit", () => {
+    console.log("FFmpeg process exited");
+    ffmpegProcess = null; // Clean up after process ends
+  });
+}
+
+function stopRecording() {
+  if (!recording) return;
+  recording = false;
+
+  ffmpegProcess.stdin.end(); // Signal ffmpeg to finish
+  console.log("Recording stopped and saved as output.mp4");
+}
+
+// Start the server on port 8080
 server.listen(8080, () => {
-  console.log("WebSocket server is running on ws://localhost:8080");
+  console.log(
+    "Server is listening on http://localhost:8080 (both WebSocket and HTTP)"
+  );
 });
