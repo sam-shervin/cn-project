@@ -45,15 +45,47 @@ const server = http.createServer((req, res) => {
       stopRecording();
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("Recording stopped\n");
-    } else {
-      console.log("Not Found");
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not Found\n");
+    } else if (req.url === "/listrecordings") {
+      console.log("Listing recordings");
+      fs.readdir(outputDir, (err, files) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unable to retrieve files" }));
+        } else {
+          const videoFiles = files.filter((file) => file.endsWith(".mp4"));
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(videoFiles));
+        }
+      });
     }
-  } else {
-    console.log("Method Not Allowed");
-    res.writeHead(405, { "Content-Type": "text/plain" });
-    res.end("Method Not Allowed\n");
+
+    // Endpoint to download a specific video file
+    else if (req.url.startsWith("/download")) {
+      const fileName = decodeURIComponent(req.url.split("/download/")[1]);
+      const filePath = path.join(outputDir, fileName);
+
+      if (fs.existsSync(filePath)) {
+        res.writeHead(200, {
+          "Content-Type": "video/mp4",
+          "Content-Disposition": `attachment; filename="${fileName}"`,
+        });
+        fs.createReadStream(filePath).pipe(res);
+      } else {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("File not found");
+      }
+    } else if (req.url === "/") {
+      const filePath = path.join(__dirname, "html-serve", "index.html");
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Internal Server Error");
+        } else {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.end(data);
+        }
+      });
+    }
   }
 });
 
