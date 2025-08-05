@@ -44,12 +44,10 @@ The camera was deployed on a hand-gesture-controlled rover for demonstration, bu
 ```
      ↓
 ```
-
 \[Remote Web Interface]
 ↳ View live stream
 ↳ Start/stop recordings
 ↳ Download saved videos
-
 ```
 
 ## Technology Stack
